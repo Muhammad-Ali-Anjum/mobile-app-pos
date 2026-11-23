@@ -1,0 +1,50 @@
+[
+  {
+    "id": "user_super_admin",
+    "fullName": "Platform Super Admin",
+    "email": "superadmin@nextplanners.com",
+    "password": "admin123",
+    "roleName": "Super Admin",
+    "shopId": "",
+    "shopName": "NPTS Platform Central",
+    "branches": ["All Platforms"],
+    "permissions": ["*"],
+    "isPlatformAdmin": true
+  },
+  {
+    "id": "user_cashier_1",
+    "fullName": "Usman Raza",
+    "email": "cashier@abc.com",
+    "password": "cashier123",
+    "roleName": "Cashier / POS Operator",
+    "shopId": "shop_skd_01",
+    "shopName": "ABC Supermarket (Skardu)",
+    "branches": ["Main Branch – Skardu"],
+    "permissions": [
+      "pos.view",
+      "pos.create",
+      "pos.edit_cart",
+      "pos.remove_item",
+      "pos.apply_discount",
+      "pos.complete_sale",
+      "pos.view_own_sales",
+      "pos.print_receipt",
+      "products.view",
+      "sales.view_own",
+      "customers.view"
+    ],
+    "isPlatformAdmin": false
+  },
+  {
+    "id": "user_owner_1",
+    "fullName": "Ali Khan",
+    "email": "owner@abc.com",
+    "password": "owner123",
+    "roleName": "Shop Owner",
+    "shopId": "shop_skd_01",
+    "shopName": "ABC Supermarket (Skardu)",
+    "branches": ["Main Branch – Skardu", "Gilgit Branch", "Islamabad Branch"],
+    "permissions": ["*"],
+    "isPlatformAdmin": false
+  }
+]

@@ -1,0 +1,18 @@
+# Node
+node_modules/
+backend/node_modules/
+.env
+
+# Flutter / Dart
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/build/
+frontend/.packages
+frontend/.pub-cache/
+frontend/.pub/
+
+# System
+.DS_Store
+Thumbs.db
+
