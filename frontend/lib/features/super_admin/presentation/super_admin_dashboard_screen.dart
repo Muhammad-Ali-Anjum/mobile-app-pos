@@ -3,32 +3,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/widgets/npts_logo.dart';
 
-class RegisteredShopItem {
-  final String id;
-  final String shopName;
-  final String owner;
-  final String email;
-  final String phone;
-  final String plan;
-  String status;
-  final String joined;
-  final String shopType;
-  final int branches;
-
-  RegisteredShopItem({
-    required this.id,
-    required this.shopName,
-    required this.owner,
-    required this.email,
-    required this.phone,
-    required this.plan,
-    required this.status,
-    required this.joined,
-    required this.shopType,
-    this.branches = 1,
-  });
-}
-
+import '../../../core/models/registered_shop_item.dart';
+import '../../../core/repositories/shop_repository.dart';
 class SuperAdminDashboardScreen extends StatefulWidget {
   const SuperAdminDashboardScreen({super.key});
 
@@ -58,67 +34,9 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
     });
   }
 
-    RegisteredShopItem(
-      id: 'shp_01',
-      shopName: 'ABC Supermarket',
-      owner: 'Ali Khan',
-      email: 'owner@abc.com',
-      phone: '+92 300 1234567',
-      plan: 'Premium',
-      status: 'Active',
-      joined: '12 Dec 2024',
-      shopType: 'Supermarket',
-      branches: 3,
-    ),
-    RegisteredShopItem(
-      id: 'shp_02',
-      shopName: 'City Mart',
-      owner: 'Usman Raza',
-      email: 'usman@citymart.pk',
-      phone: '+92 312 9876543',
-      plan: 'Standard',
-      status: 'Active',
-      joined: '11 Dec 2024',
-      shopType: 'Retail',
-      branches: 2,
-    ),
-    RegisteredShopItem(
-      id: 'shp_03',
-      shopName: 'Kashish Hub',
-      owner: 'Fatima Ali',
-      email: 'fatima@kashish.com',
-      phone: '+92 333 4567890',
-      plan: 'Basic',
-      status: 'Active',
-      joined: '10 Dec 2024',
-      shopType: 'Cosmetics & Retail',
-      branches: 1,
-    ),
-    RegisteredShopItem(
-      id: 'shp_04',
-      shopName: 'Capital Traders',
-      owner: 'Tariq Mehmood',
-      email: 'tariq@capital.pk',
-      phone: '+92 345 1122334',
-      plan: 'Trial',
-      status: 'Inactive',
-      joined: '08 Dec 2024',
-      shopType: 'Wholesaler',
-      branches: 1,
-    ),
-    RegisteredShopItem(
-      id: 'shp_05',
-      shopName: 'Northern Pharmacy',
-      owner: 'Dr. Sajid Hassan',
-      email: 'sajid@northmed.com',
-      phone: '+92 301 9988776',
-      plan: 'Standard',
-      status: 'Active',
-      joined: '05 Dec 2024',
-      shopType: 'Pharmacy',
-      branches: 2,
-    ),
-  ];
+
+
+
 
   int get _totalShopsCount => 124 + _shops.length;
   int get _activeShopsCount => 108 + _shops.where((s) => s.status == 'Active').length;
@@ -1349,8 +1267,12 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                                       id: 'shp_${DateTime.now().millisecondsSinceEpoch}',
                                       shopName: nameCtrl.text.trim(),
                                       owner: ownerCtrl.text.trim(),
-                                      email: emailCtrl.text.trim().isNotEmpty ? emailCtrl.text.trim() : 'owner@${nameCtrl.text.toLowerCase().replaceAll(' ', '')}.com',
-                                      phone: phoneCtrl.text.trim().isNotEmpty ? phoneCtrl.text.trim() : '+92 300 0000000',
+                                      email: emailCtrl.text.trim().isNotEmpty
+                                          ? emailCtrl.text.trim()
+                                          : 'owner@${nameCtrl.text.toLowerCase().replaceAll(' ', '')}.com',
+                                      phone: phoneCtrl.text.trim().isNotEmpty
+                                          ? phoneCtrl.text.trim()
+                                          : '+92 300 0000000',
                                       plan: selectedPlan,
                                       status: 'Active',
                                       joined: 'Today',
