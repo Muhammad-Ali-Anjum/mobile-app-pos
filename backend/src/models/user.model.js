@@ -39,8 +39,12 @@ const userSchema = new mongoose.Schema(
     },
     platformRole: {
       type: String,
-      enum: ['super_admin', 'support_admin', null],
+      enum: ['super_admin', 'admin', 'accountant', 'support_agent', 'sales_manager', 'viewer', 'support_admin', null],
       default: null
+    },
+    platformPermissions: {
+      type: [String],
+      default: []
     },
     status: {
       type: String,

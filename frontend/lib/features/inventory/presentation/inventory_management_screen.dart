@@ -1,21 +1,24 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/permission_guard.dart';
-import '../../../core/constants/permissions.dart';
 
-class InventoryMovementItem {
-  final String date;
-  final String product;
-  final String type;
-  final int qty;
-  final String branch;
+class InventoryProductItem {
+  final String id;
+  final String name;
+  final String sku;
+  final String category;
+  final int stock;
+  final double price;
 
-  InventoryMovementItem({
-    required this.date,
-    required this.product,
-    required this.type,
-    required this.qty,
-    required this.branch,
+  InventoryProductItem({
+    required this.id,
+    required this.name,
+    required this.sku,
+    required this.category,
+    required this.stock,
+    required this.price,
   });
 }
 
@@ -27,15 +30,59 @@ class InventoryManagementScreen extends StatefulWidget {
 }
 
 class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
-  final List<InventoryMovementItem> _movements = [
-    InventoryMovementItem(date: 'Today, 11:20 AM', product: 'Rice 5kg', type: 'Stock In', qty: 50, branch: 'Main Branch'),
-    InventoryMovementItem(date: 'Today, 10:45 AM', product: 'Milk 1L', type: 'Sale', qty: -10, branch: 'Main Branch'),
-    InventoryMovementItem(date: 'Yesterday', product: 'Sugar 1kg', type: 'Stock Out', qty: -15, branch: 'Branch 2 - Gilgit'),
-    InventoryMovementItem(date: 'Yesterday', product: 'Cooking Oil 1L', type: 'Adjustment', qty: -2, branch: 'Main Branch'),
-  ];
+  List<InventoryProductItem> _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInventory();
+  }
+
+  Future<Map<String, String>> _headers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token') ?? '';
+    return {
+      'Content-Type': 'application/json',
+      if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<void> _loadInventory() async {
+    setState(() => _loading = true);
+    try {
+      final res = await http.get(Uri.parse('http://localhost:5002/api/products'), headers: await _headers());
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final list = (body['data'] as List?) ?? [];
+        if (!mounted) return;
+        setState(() {
+          _items = list
+              .map((p) => InventoryProductItem(
+                    id: (p['_id'] ?? p['id'] ?? '').toString(),
+                    name: (p['name'] ?? '').toString(),
+                    sku: (p['sku'] ?? '').toString(),
+                    category: (p['category'] ?? 'General').toString(),
+                    stock: (p['currentStock'] as num?)?.toInt() ?? 0,
+                    price: (p['sellingPrice'] as num?)?.toDouble() ?? 0,
+                  ))
+              .toList();
+          _loading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _loading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final totalStock = _items.fold<int>(0, (s, p) => s + p.stock);
+    final totalVal = _items.fold<double>(0, (s, p) => s + (p.stock * p.price));
+    final lowCount = _items.where((p) => p.stock > 0 && p.stock <= 5).length;
+    final outCount = _items.where((p) => p.stock <= 0).length;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Padding(
@@ -43,55 +90,45 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 12,
               children: [
-                Column(
+                const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
+                  children: [
                     Text('Inventory & Warehouse', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                     SizedBox(height: 4),
-                    Text('Real-time stock tracking, warehouse transfers, adjustments, and re-order thresholds', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+                    Text('Real-time stock tracking and quick stock adjustments from MongoDB', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
                   ],
                 ),
-                Row(
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.swap_horiz, size: 18),
-                      label: const Text('Transfer Stock'),
-                    ),
-                    const SizedBox(width: 12),
-                    PermissionGuard(
-                      permission: AppPermissions.inventoryAdjust,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _openStockAdjustmentDialog(context),
-                        icon: const Icon(Icons.tune, size: 18),
-                        label: const Text('Stock Adjustment'),
-                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                      ),
-                    ),
-                  ],
+                OutlinedButton.icon(
+                  onPressed: _loadInventory,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Refresh'),
                 ),
               ],
             ),
             const SizedBox(height: 20),
 
-            // Top Stat Cards
-            Row(
-              children: [
-                _buildStatCard('Total Stock Items', '1,250', AppColors.primary),
-                const SizedBox(width: 14),
-                _buildStatCard('Total Inventory Value', 'Rs. 450,750', AppColors.secondary),
-                const SizedBox(width: 14),
-                _buildStatCard('Low Stock Items', '18', AppColors.warning),
-                const SizedBox(width: 14),
-                _buildStatCard('Out of Stock', '12', AppColors.danger),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildStatCard('Total Stock Units', '$totalStock', AppColors.primary),
+                  const SizedBox(width: 14),
+                  _buildStatCard('Total Inventory Value', 'Rs. ${totalVal.toStringAsFixed(0)}', AppColors.secondary),
+                  const SizedBox(width: 14),
+                  _buildStatCard('Low Stock Items', '$lowCount', AppColors.warning),
+                  const SizedBox(width: 14),
+                  _buildStatCard('Out of Stock', '$outCount', AppColors.danger),
+                ],
+              ),
             ),
             const SizedBox(height: 20),
 
-            // Recent Movements Table
             Expanded(
               child: Card(
                 elevation: 0,
@@ -99,71 +136,63 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(20.0),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Recent Inventory Stock Movements',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textPrimary),
-                      ),
-                      const SizedBox(height: 16),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(8)),
                         child: const Row(
                           children: [
-                            Expanded(flex: 2, child: Text('DATE', style: _headerStyle)),
                             Expanded(flex: 3, child: Text('PRODUCT', style: _headerStyle)),
-                            Expanded(flex: 2, child: Text('MOVEMENT TYPE', style: _headerStyle)),
-                            Expanded(flex: 2, child: Text('QUANTITY', style: _headerStyle)),
-                            Expanded(flex: 2, child: Text('BRANCH', style: _headerStyle)),
+                            Expanded(flex: 2, child: Text('SKU', style: _headerStyle)),
+                            Expanded(flex: 2, child: Text('CATEGORY', style: _headerStyle)),
+                            Expanded(flex: 2, child: Text('STOCK', style: _headerStyle)),
+                            Expanded(flex: 2, child: Text('ADJUST', style: _headerStyle)),
                           ],
                         ),
                       ),
                       const SizedBox(height: 8),
                       Expanded(
-                        child: ListView.separated(
-                          itemCount: _movements.length,
-                          separatorBuilder: (ctx, i) => const Divider(height: 1, color: AppColors.border),
-                          itemBuilder: (context, index) {
-                            final m = _movements[index];
-                            final isPlus = m.qty > 0;
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              child: Row(
-                                children: [
-                                  Expanded(flex: 2, child: Text(m.date, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-                                  Expanded(flex: 3, child: Text(m.product, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary))),
-                                  Expanded(
-                                    flex: 2,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.primaryLight,
-                                          borderRadius: BorderRadius.circular(4),
+                        child: _loading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _items.isEmpty
+                                ? const Center(child: Text('No inventory items in database.', style: TextStyle(color: AppColors.textSecondary)))
+                                : ListView.separated(
+                                    itemCount: _items.length,
+                                    separatorBuilder: (ctx, i) => const Divider(height: 1, color: AppColors.border),
+                                    itemBuilder: (context, index) {
+                                      final item = _items[index];
+                                      final isOut = item.stock <= 0;
+                                      final isLow = item.stock > 0 && item.stock <= 5;
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                        child: Row(
+                                          children: [
+                                            Expanded(flex: 3, child: Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                            Expanded(flex: 2, child: Text(item.sku, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                                            Expanded(flex: 2, child: Text(item.category, style: const TextStyle(fontSize: 12))),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                '${item.stock}',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: isOut ? AppColors.danger : (isLow ? AppColors.warning : AppColors.success),
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              flex: 2,
+                                              child: TextButton.icon(
+                                                onPressed: () => _openStockAdjustmentDialog(item),
+                                                icon: const Icon(Icons.tune, size: 16),
+                                                label: const Text('Adjust', style: TextStyle(fontSize: 12)),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        child: Text(m.type, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary)),
-                                      ),
-                                    ),
+                                      );
+                                    },
                                   ),
-                                  Expanded(
-                                    flex: 2,
-                                    child: Text(
-                                      '${isPlus ? "+" : ""}${m.qty}',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: isPlus ? AppColors.success : AppColors.danger,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(flex: 2, child: Text(m.branch, style: const TextStyle(fontSize: 12, color: AppColors.textPrimary))),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
                       ),
                     ],
                   ),
@@ -177,7 +206,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   }
 
   static Widget _buildStatCard(String label, String value, Color color) {
-    return Expanded(
+    return SizedBox(
+      width: 210,
       child: Card(
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -186,7 +216,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary), overflow: TextOverflow.ellipsis),
               const SizedBox(height: 6),
               Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
             ],
@@ -196,31 +226,36 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     );
   }
 
-  void _openStockAdjustmentDialog(BuildContext context) {
+  void _openStockAdjustmentDialog(InventoryProductItem item) {
+    final qtyCtrl = TextEditingController(text: '${item.stock}');
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Adjust Inventory Stock'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            TextField(decoration: InputDecoration(labelText: 'Select Product')),
-            SizedBox(height: 12),
-            TextField(decoration: InputDecoration(labelText: 'New Stock Count')),
-            SizedBox(height: 12),
-            TextField(decoration: InputDecoration(labelText: 'Adjustment Reason (e.g. damaged, physical audit)')),
-          ],
+        title: Text('Adjust Stock - ${item.name}'),
+        content: TextField(
+          controller: qtyCtrl,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'New Stock Quantity', border: OutlineInputBorder()),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Stock count updated and logged in audit trails.')),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () async {
+              final nextQty = int.tryParse(qtyCtrl.text.trim());
+              if (nextQty == null) return;
+              final nav = Navigator.of(ctx);
+              final res = await http.put(
+                Uri.parse('http://localhost:5002/api/products/${item.id}'),
+                headers: await _headers(),
+                body: jsonEncode({'currentStock': nextQty}),
               );
+              if (res.statusCode == 200) {
+                nav.pop();
+                await _loadInventory();
+              }
             },
-            child: const Text('Save Adjustment'),
+            child: const Text('Save Stock', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -233,4 +268,3 @@ const TextStyle _headerStyle = TextStyle(
   fontWeight: FontWeight.bold,
   color: AppColors.textSecondary,
 );
-

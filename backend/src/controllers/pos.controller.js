@@ -28,7 +28,12 @@ class PosController {
         return res.status(400).json({ success: false, message: 'Cart items cannot be empty.' });
       }
 
-      const activeBranchId = branchId || req.branchId;
+      let activeBranchId = branchId || req.branchId;
+      if (!activeBranchId) {
+        const Branch = require('../models/branch.model');
+        const mainBranch = await Branch.findOne({ shopId: req.shopId }).sort({ isMainBranch: -1, createdAt: 1 });
+        activeBranchId = mainBranch?._id;
+      }
       if (!activeBranchId) {
         return res.status(400).json({ success: false, message: 'Branch ID context is required.' });
       }

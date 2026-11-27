@@ -195,6 +195,76 @@ class ProductController {
       return res.status(500).json({ success: false, message: error.message });
     }
   }
+
+  async listCategories(req, res) {
+    try {
+      const Category = require('../models/category.model');
+      const categories = await Category.find({ shopId: req.shopId, isActive: true }).sort({ name: 1 }).lean();
+      return res.status(200).json({ success: true, data: categories });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async createCategory(req, res) {
+    try {
+      const Category = require('../models/category.model');
+      const name = (req.body.name || '').trim();
+      if (!name) {
+        return res.status(400).json({ success: false, message: 'Category name is required.' });
+      }
+      const existing = await Category.findOne({ shopId: req.shopId, name: new RegExp(`^${name}$`, 'i') });
+      if (existing) {
+        return res.status(409).json({ success: false, message: 'Category already exists.' });
+      }
+      const category = await Category.create({
+        shopId: req.shopId,
+        name,
+        description: (req.body.description || '').trim()
+      });
+      return res.status(201).json({ success: true, data: category });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async updateCategory(req, res) {
+    try {
+      const Category = require('../models/category.model');
+      const name = (req.body.name || '').trim();
+      if (!name) return res.status(400).json({ success: false, message: 'Category name is required.' });
+      const updated = await Category.findOneAndUpdate(
+        { _id: req.params.id, shopId: req.shopId },
+        { name, description: (req.body.description || '').trim() },
+        { new: true }
+      );
+      if (!updated) return res.status(404).json({ success: false, message: 'Category not found.' });
+      return res.status(200).json({ success: true, data: updated });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async deleteCategory(req, res) {
+    try {
+      const Category = require('../models/category.model');
+      const deleted = await Category.findOneAndDelete({ _id: req.params.id, shopId: req.shopId });
+      if (!deleted) return res.status(404).json({ success: false, message: 'Category not found.' });
+      return res.status(200).json({ success: true, message: 'Category deleted.' });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  async deleteProduct(req, res) {
+    try {
+      const deleted = await Product.findOneAndDelete({ _id: req.params.id, shopId: req.shopId });
+      if (!deleted) return res.status(404).json({ success: false, message: 'Product not found.' });
+      return res.status(200).json({ success: true, message: 'Product deleted.' });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
 }
 
 module.exports = new ProductController();

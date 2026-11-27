@@ -24,7 +24,9 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api', routes);
 
-// 404 Handler
+app.get('/', (req, res) => {
+  res.json({ success: true, message: 'Next Planners POS API' });
+});
 app.use((req, res) => {
   res.status(404).json({
     success: false,

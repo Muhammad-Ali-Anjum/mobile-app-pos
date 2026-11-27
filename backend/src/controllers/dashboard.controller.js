@@ -57,10 +57,10 @@ class DashboardController {
       return res.status(200).json({
         success: true,
         data: {
-          todaySales: todayTotal || 24500,
-          totalRevenue: totalRevenue || 220750,
-          totalOrders: totalOrders || 350,
-          profit: netProfit !== null ? (netProfit || 88420) : null,
+          todaySales: todayTotal,
+          totalRevenue: totalRevenue,
+          totalOrders: totalOrders,
+          profit: netProfit,
           recentSales,
           lowStockAlerts: lowStockProducts
         }

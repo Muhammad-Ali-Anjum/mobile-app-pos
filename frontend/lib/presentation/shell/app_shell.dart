@@ -190,19 +190,21 @@ class _AppShellState extends State<AppShell> {
               onPressed: () => Scaffold.of(ctx).openDrawer(),
             ),
           ),
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.storefront, color: AppColors.primary, size: 18),
-              SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'ABC Supermarket',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+          title: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.storefront, color: AppColors.primary, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  user?.shopName ?? 'My Shop',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                   overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             IconButton(

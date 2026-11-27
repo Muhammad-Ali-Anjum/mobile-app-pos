@@ -2,6 +2,13 @@ const mongoose = require('mongoose');
 
 const shopSchema = new mongoose.Schema(
   {
+    tenantId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      uppercase: true
+    },
     name: {
       type: String,
       required: true,
@@ -13,6 +20,42 @@ const shopSchema = new mongoose.Schema(
       trim: true,
       uppercase: true
     },
+    shopType: {
+      type: String,
+      trim: true,
+      default: 'Retail'
+    },
+    logoUrl: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: ''
+    },
+    phone: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    address: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    city: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    country: {
+      type: String,
+      trim: true,
+      default: 'Pakistan'
+    },
     ownerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -21,13 +64,32 @@ const shopSchema = new mongoose.Schema(
     subscription: {
       plan: {
         type: String,
-        enum: ['TRIAL', 'BASIC', 'STANDARD', 'PREMIUM', 'ENTERPRISE'],
         default: 'TRIAL'
       },
       status: {
         type: String,
-        enum: ['ACTIVE', 'SUSPENDED', 'EXPIRED'],
+        enum: ['ACTIVE', 'TRIAL', 'PENDING', 'SUSPENDED', 'EXPIRED', 'CANCELLED'],
         default: 'ACTIVE'
+      },
+      billingCycle: {
+        type: String,
+        enum: ['MONTHLY', 'YEARLY'],
+        default: 'MONTHLY'
+      },
+      startDate: {
+        type: Date,
+        default: Date.now
+      },
+      expiresAt: {
+        type: Date
+      },
+      discount: {
+        type: Number,
+        default: 0
+      },
+      initialPayment: {
+        type: Number,
+        default: 0
       },
       maxBranches: {
         type: Number,
@@ -37,8 +99,9 @@ const shopSchema = new mongoose.Schema(
         type: Number,
         default: 5
       },
-      expiresAt: {
-        type: Date
+      maxPosTerminals: {
+        type: Number,
+        default: 1
       }
     },
     settings: {

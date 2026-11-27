@@ -26,6 +26,11 @@ const requirePermission = (requiredPermission) => {
         });
       }
 
+      // Shop Owner always has full access to their own shop
+      if (req.shop && String(req.shop.ownerId) === String(req.user._id)) {
+        return next();
+      }
+
       const hasPerm = await permissionService.hasPermission(
         req.user._id,
         req.shopId,
@@ -72,6 +77,11 @@ const requireAnyPermission = (permissions = []) => {
           success: false,
           message: 'Tenant context (shopId) is missing for permission verification.'
         });
+      }
+
+      // Shop Owner always has full access to their own shop
+      if (req.shop && String(req.shop.ownerId) === String(req.user._id)) {
+        return next();
       }
 
       const userPerms = await permissionService.resolveUserPermissions(req.user._id, req.shopId);

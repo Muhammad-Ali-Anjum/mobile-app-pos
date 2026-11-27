@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/permission_guard.dart';
 import '../../../core/constants/permissions.dart';
@@ -39,16 +42,45 @@ class PosBillingScreen extends StatefulWidget {
 }
 
 class _PosBillingScreenState extends State<PosBillingScreen> {
-  final List<PosProductItem> _catalog = [
-    PosProductItem(id: '1', name: 'Rice 5kg', category: 'Groceries', price: 120, sku: 'RCK001', icon: Icons.grain),
-    PosProductItem(id: '2', name: 'Sugar 1kg', category: 'Groceries', price: 50, sku: 'SUG001', icon: Icons.kitchen),
-    PosProductItem(id: '3', name: 'Milk 1L', category: 'Beverages', price: 40, sku: 'MIL001', icon: Icons.local_drink),
-    PosProductItem(id: '4', name: 'Cooking Oil 1L', category: 'Groceries', price: 500, sku: 'OIL001', icon: Icons.opacity),
-    PosProductItem(id: '5', name: 'Biscuits', category: 'Snacks', price: 120, sku: 'BIS001', icon: Icons.cookie),
-    PosProductItem(id: '6', name: 'Tea 250g', category: 'Groceries', price: 250, sku: 'TEA001', icon: Icons.emoji_food_beverage),
-    PosProductItem(id: '7', name: 'Noodles', category: 'Snacks', price: 60, sku: 'NOD001', icon: Icons.ramen_dining),
-    PosProductItem(id: '8', name: 'Detergent', category: 'Others', price: 350, sku: 'DET001', icon: Icons.cleaning_services),
-  ];
+  List<PosProductItem> _catalog = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCatalog();
+  }
+
+  Future<Map<String, String>> _headers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token') ?? '';
+    return {
+      'Content-Type': 'application/json',
+      if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<void> _loadCatalog() async {
+    try {
+      final res = await http.get(Uri.parse('http://localhost:5002/api/products'), headers: await _headers());
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final list = (body['data'] as List?) ?? [];
+        if (!mounted) return;
+        setState(() {
+          _catalog = list.map((p) {
+            return PosProductItem(
+              id: (p['_id'] ?? p['id'] ?? '').toString(),
+              name: (p['name'] ?? '').toString(),
+              category: (p['category'] ?? 'General').toString(),
+              price: (p['sellingPrice'] as num?)?.toDouble() ?? 0,
+              sku: (p['sku'] ?? '').toString(),
+              icon: Icons.inventory_2_outlined,
+            );
+          }).toList();
+        });
+      }
+    } catch (_) {}
+  }
 
   final List<CartItem> _cart = [];
   String _selectedCategory = 'All';
@@ -520,64 +552,180 @@ class _PosBillingScreenState extends State<PosBillingScreen> {
   }
 
   void _showPaymentDialog(BuildContext context) {
+    if (_cart.isEmpty) return;
+    String selectedMethod = 'CASH';
+    bool isSubmitting = false;
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Complete Payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Amount to Pay: Rs. ${grandTotal.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 16),
-            const Text('Select Payment Method:'),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildPaymentOption(Icons.money, 'Cash'),
-                _buildPaymentOption(Icons.credit_card, 'Card'),
-                _buildPaymentOption(Icons.account_balance, 'Bank'),
-                _buildPaymentOption(Icons.qr_code, 'UPI'),
-              ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Complete Payment'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Amount to Pay: Rs. ${grandTotal.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+              const Text('Select Payment Method:'),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildPaymentOption(Icons.money, 'Cash', 'CASH', selectedMethod, (v) => setDialogState(() => selectedMethod = v)),
+                  _buildPaymentOption(Icons.credit_card, 'Card', 'CARD', selectedMethod, (v) => setDialogState(() => selectedMethod = v)),
+                  _buildPaymentOption(Icons.account_balance, 'Bank', 'BANK', selectedMethod, (v) => setDialogState(() => selectedMethod = v)),
+                  _buildPaymentOption(Icons.qr_code, 'Online', 'ONLINE', selectedMethod, (v) => setDialogState(() => selectedMethod = v)),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: isSubmitting ? null : () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      setDialogState(() => isSubmitting = true);
+                      final nav = Navigator.of(ctx);
+                      final msg = ScaffoldMessenger.of(context);
+                      try {
+                        final res = await http.post(
+                          Uri.parse('http://localhost:5002/api/pos/checkout'),
+                          headers: await _headers(),
+                          body: jsonEncode({
+                            'customerName': _selectedCustomer,
+                            'paymentMethod': selectedMethod,
+                            'subtotal': subtotal,
+                            'discountPercent': _discountPercent,
+                            'discountAmount': discountAmount,
+                            'grandTotal': grandTotal,
+                            'items': _cart
+                                .map((c) => {
+                                      'productId': c.product.id,
+                                      'name': c.product.name,
+                                      'quantity': c.quantity,
+                                      'unitPrice': c.product.price,
+                                      'total': c.total,
+                                    })
+                                .toList(),
+                          }),
+                        );
+                        nav.pop();
+                        if (res.statusCode == 201 || res.statusCode == 200) {
+                          final body = jsonDecode(res.body) as Map<String, dynamic>;
+                          final sale = body['data'] as Map<String, dynamic>?;
+                          final invNo = (sale?['invoiceNumber'] ?? 'INV').toString();
+                          final paidTotal = grandTotal;
+                          final itemsSnapshot = List<CartItem>.from(_cart);
+                          setState(() => _cart.clear());
+                          _showReceiptDialog(invNo, selectedMethod, paidTotal, itemsSnapshot);
+                        } else {
+                          msg.showSnackBar(
+                            SnackBar(backgroundColor: AppColors.danger, content: Text('Checkout failed: ${res.body}')),
+                          );
+                        }
+                      } catch (e) {
+                        nav.pop();
+                        msg.showSnackBar(SnackBar(backgroundColor: AppColors.danger, content: Text('Error: $e')));
+                      }
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary),
+              child: isSubmitting
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Confirm & Pay', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showReceiptDialog(String invoiceNo, String method, double totalPaid, List<CartItem> items) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: AppColors.success),
+            const SizedBox(width: 8),
+            Text('Receipt • $invoiceNo', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: SizedBox(
+          width: 340,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Customer: $_selectedCustomer', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              Text('Payment: $method', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              const Divider(height: 18),
+              ...items.map((c) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(child: Text('${c.product.name} x${c.quantity}', style: const TextStyle(fontSize: 13))),
+                        Text('Rs. ${c.total.toStringAsFixed(0)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  )),
+              const Divider(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('GRAND TOTAL', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('Rs. ${totalPaid.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.secondary)),
+                ],
+              ),
+            ],
+          ),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() => _cart.clear());
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  backgroundColor: AppColors.success,
-                  content: Text('Sale completed successfully! Receipt sent to thermal printer.'),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary),
-            child: const Text('Confirm & Print Receipt'),
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            child: const Text('Done', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  static Widget _buildPaymentOption(IconData icon, String label) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.primaryLight,
-            borderRadius: BorderRadius.circular(8),
+  static Widget _buildPaymentOption(
+    IconData icon,
+    String label,
+    String value,
+    String current,
+    ValueChanged<String> onSelect,
+  ) {
+    final isSelected = current == value;
+    return InkWell(
+      onTap: () => onSelect(value),
+      borderRadius: BorderRadius.circular(8),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.secondary : AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: isSelected ? AppColors.secondary : Colors.transparent),
+            ),
+            child: Icon(icon, color: isSelected ? Colors.white : AppColors.primary),
           ),
-          child: Icon(icon, color: AppColors.primary),
-        ),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 12)),
-      ],
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? AppColors.secondary : AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

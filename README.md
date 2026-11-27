@@ -94,4 +94,11 @@ npm start           # Starts on port 5000
 cd frontend
 flutter pub get
 flutter run -d chrome  # Or windows / android / ios
+flutter build apk --release
+flutter build apk --split-per-abi
+
+cd i:\mobile-app-pos\frontend
+flutter clean
+flutter pub get
+
 ```

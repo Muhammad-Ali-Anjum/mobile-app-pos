@@ -87,7 +87,7 @@ const seedDemoData = async () => {
 
   const staff = [
     {
-      fullName: 'Ali Khan',
+      fullName: 'Anjum',
       email: 'owner@abc.com',
       username: 'alikhan',
       phone: '03001234567',
@@ -96,7 +96,7 @@ const seedDemoData = async () => {
       branchScope: 'ALL_BRANCHES'
     },
     {
-      fullName: 'Fatima Ali',
+      fullName: 'M Ali Anjum',
       email: 'manager@abc.com',
       username: 'fatimaali',
       phone: '03129876543',
@@ -106,7 +106,7 @@ const seedDemoData = async () => {
       branchId: mainBranch._id
     },
     {
-      fullName: 'Usman Raza',
+      fullName: ' Raza',
       email: 'cashier@abc.com',
       username: 'usmanraza',
       phone: '03451112233',

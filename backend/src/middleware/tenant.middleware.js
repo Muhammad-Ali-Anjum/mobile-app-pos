@@ -34,16 +34,42 @@ const requireTenant = async (req, res, next) => {
       });
     }
 
-    // Verify subscription status
-    if (shop.subscription && shop.subscription.status === 'SUSPENDED') {
-      return res.status(402).json({
-        success: false,
-        message: 'Shop subscription is suspended. Please renew subscription.'
-      });
+    // Verify subscription status & expiry (with grace period)
+    if (shop.subscription) {
+      const subStatus = (shop.subscription.status || 'ACTIVE').toUpperCase();
+      if (subStatus === 'SUSPENDED' || subStatus === 'CANCELLED') {
+        return res.status(402).json({
+          success: false,
+          message: `Shop subscription is ${subStatus.toLowerCase()}. Please renew subscription.`
+        });
+      }
+      if (subStatus === 'EXPIRED') {
+        return res.status(402).json({
+          success: false,
+          message: 'Shop subscription has expired. Please renew to restore access.'
+        });
+      }
+      if (shop.subscription.expiresAt) {
+        const graceDays = 3;
+        const cutoff = new Date(new Date(shop.subscription.expiresAt).getTime() + graceDays * 86400000);
+        if (Date.now() > cutoff.getTime() && !(req.user?.isPlatformUser && req.user?.platformRole === 'super_admin')) {
+          return res.status(402).json({
+            success: false,
+            message: 'Shop subscription and grace period have expired. Please renew subscription.'
+          });
+        }
+      }
     }
 
     // Platform Super Admin has access across shops
     if (req.user.isPlatformUser && req.user.platformRole === 'super_admin') {
+      req.shop = shop;
+      req.shopId = shop._id;
+      return next();
+    }
+
+    // Shop Owner always has access to their own shop
+    if (String(shop.ownerId) === String(req.user._id)) {
       req.shop = shop;
       req.shopId = shop._id;
       return next();

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../repositories/user_repository.dart';
@@ -65,16 +66,66 @@ class AuthService extends ChangeNotifier {
   // ---------------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------------
-  /// Login using the real user repository (reads users.json)
+  static const String _loginUrl = 'http://localhost:5002/api/auth/login';
+  String? _token;
+  String? get token => _token;
+
+  /// Login against the real MongoDB backend (/api/auth/login), with offline fallback
   Future<void> login(String email, String password) async {
-    final repo = UserRepository();
-    final session = await repo.authenticate(email, password);
-    if (session == null) {
-      throw Exception('Invalid credentials');
+    try {
+      final response = await http.post(
+        Uri.parse(_loginUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'emailOrUsername': email,
+          'password': password,
+        }),
+      );
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && body['success'] == true) {
+        final data = body['data'] as Map<String, dynamic>;
+        final user = data['user'] as Map<String, dynamic>;
+        final shop = data['shop'] as Map<String, dynamic>?;
+        final roles = ((data['roles'] as List?) ?? []).map((e) => e.toString()).toList();
+        final perms = ((data['permissions'] as List?) ?? []).map((e) => e.toString()).toSet();
+        final isSuper = user['isPlatformUser'] == true &&
+            (user['platformRole']?.toString().toUpperCase() == 'SUPER_ADMIN');
+
+        _token = data['token']?.toString();
+        final session = UserSession(
+          id: (user['id'] ?? '').toString(),
+          fullName: (user['fullName'] ?? 'User').toString(),
+          email: (user['email'] ?? email).toString(),
+          roleName: roles.isNotEmpty
+              ? roles.first
+              : (isSuper ? 'Super Admin' : 'Shop Owner'),
+          shopId: (shop?['id'] ?? '').toString(),
+          shopName: (shop?['name'] ?? (isSuper ? 'NPTS Platform Central' : 'My Shop')).toString(),
+          branches: const ['Main Branch'],
+          permissions: perms.isEmpty && !isSuper ? {'*'} : perms,
+          isPlatformAdmin: isSuper,
+        );
+
+        setSession(session);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('session', jsonEncode(session.toMap()));
+        if (_token != null) await prefs.setString('auth_token', _token!);
+        return;
+      }
+
+      throw Exception(body['message'] ?? 'Invalid credentials');
+    } on http.ClientException {
+      // Offline fallback to local users.json if backend is unreachable
+      final repo = UserRepository();
+      final session = await repo.authenticate(email, password);
+      if (session == null) {
+        throw Exception('Invalid credentials');
+      }
+      setSession(session);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('session', jsonEncode(session.toMap()));
     }
-    setSession(session);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('session', jsonEncode(session.toMap()));
   }
 
   /// For quick testing / fallback: mock login using in‑memory map
@@ -126,14 +177,17 @@ class AuthService extends ChangeNotifier {
         permissions: map['permissions'] as Set<String>,
         isPlatformAdmin: map['isPlatformAdmin'] as bool,
       );
+      _token = prefs.getString('auth_token');
       notifyListeners();
     }
   }
 
   void logout() async {
     _currentUser = null;
+    _token = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('session');
+    await prefs.remove('auth_token');
     notifyListeners();
   }
 

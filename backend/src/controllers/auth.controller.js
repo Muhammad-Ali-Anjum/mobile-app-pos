@@ -55,6 +55,14 @@ class AuthController {
         }
       }
 
+      // Block login if shop is suspended/deactivated (for non-platform users)
+      if (targetShop && !targetShop.isActive && !user.isPlatformUser) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your shop account is suspended or deactivated. Please contact Super Admin.'
+        });
+      }
+
       // Resolve user's permissions in this shop
       let permissions = [];
       let roles = [];
@@ -66,6 +74,12 @@ class AuthController {
           .populate('roleId')
           .lean();
         roles = userRoles.map((ur) => ur.roleId?.name).filter(Boolean);
+
+        // Ensure Shop Owner always has full shop permissions even if RBAC seed wasn't run
+        if (String(targetShop.ownerId) === String(user._id)) {
+          if (permissions.length === 0) permissions = ['*'];
+          if (roles.length === 0) roles = ['Shop Owner'];
+        }
       }
 
       // Generate JWT

@@ -1,9 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/permission_guard.dart';
 import '../../../core/constants/permissions.dart';
 
 class CustomerEntry {
+  final String id;
   final String name;
   final String phone;
   final String email;
@@ -11,12 +15,22 @@ class CustomerEntry {
   final String status;
 
   CustomerEntry({
+    required this.id,
     required this.name,
     required this.phone,
     required this.email,
     required this.balance,
     required this.status,
   });
+
+  factory CustomerEntry.fromMap(Map<String, dynamic> map) => CustomerEntry(
+        id: (map['_id'] ?? map['id'] ?? '').toString(),
+        name: (map['name'] ?? map['fullName'] ?? '').toString(),
+        phone: (map['phone'] ?? '').toString(),
+        email: (map['email'] ?? '').toString(),
+        balance: (map['balance'] as num?)?.toDouble() ?? 0,
+        status: (map['status'] ?? 'Active').toString(),
+      );
 }
 
 class CustomerManagementScreen extends StatefulWidget {
@@ -27,15 +41,50 @@ class CustomerManagementScreen extends StatefulWidget {
 }
 
 class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
-  final List<CustomerEntry> _customers = [
-    CustomerEntry(name: 'Ali Khan', phone: '0300 1234567', email: 'ali@abc.com', balance: 2500, status: 'Active'),
-    CustomerEntry(name: 'Fatima Ali', phone: '0312 9876543', email: 'fatima@abc.com', balance: 0, status: 'Active'),
-    CustomerEntry(name: 'Usman Raza', phone: '0345 1112233', email: 'usman@abc.com', balance: 1200, status: 'Active'),
-    CustomerEntry(name: 'Sana Malik', phone: '0322 4455667', email: 'sana@abc.com', balance: 0, status: 'Active'),
-  ];
+  static const String _baseUrl = 'http://localhost:5002/api/customers';
+  List<CustomerEntry> _customers = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCustomers();
+  }
+
+  Future<Map<String, String>> _headers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token') ?? '';
+    return {
+      'Content-Type': 'application/json',
+      if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<void> _loadCustomers() async {
+    setState(() => _loading = true);
+    try {
+      final res = await http.get(Uri.parse(_baseUrl), headers: await _headers());
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final list = (body['data'] as List?) ?? [];
+        if (!mounted) return;
+        setState(() {
+          _customers = list.map((e) => CustomerEntry.fromMap(e as Map<String, dynamic>)).toList();
+          _loading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _loading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final total = _customers.length;
+    final active = _customers.where((c) => c.status.toLowerCase() == 'active').length;
+    final withBalance = _customers.where((c) => c.balance > 0).length;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Padding(
@@ -43,12 +92,15 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 12,
               children: [
-                Column(
+                const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
+                  children: [
                     Text('Customer Management', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                     SizedBox(height: 4),
                     Text('Customer ledger, balances, loyalty, and contact details', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
@@ -58,8 +110,8 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                   permission: AppPermissions.usersCreate,
                   child: ElevatedButton.icon(
                     onPressed: () => _openAddCustomerDialog(context),
-                    icon: const Icon(Icons.person_add, size: 20),
-                    label: const Text('Add Customer'),
+                    icon: const Icon(Icons.person_add, size: 20, color: Colors.white),
+                    label: const Text('Add Customer', style: TextStyle(color: Colors.white)),
                     style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary),
                   ),
                 ),
@@ -69,11 +121,11 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
 
             Row(
               children: [
-                _buildStatCard('Total Customers', '540', AppColors.primary),
+                _buildStatCard('Total Customers', '$total', AppColors.primary),
                 const SizedBox(width: 14),
-                _buildStatCard('Active Accounts', '520', AppColors.success),
+                _buildStatCard('Active Accounts', '$active', AppColors.success),
                 const SizedBox(width: 14),
-                _buildStatCard('With Outstanding Balance', '25', AppColors.warning),
+                _buildStatCard('With Outstanding Balance', '$withBalance', AppColors.warning),
               ],
             ),
             const SizedBox(height: 20),
@@ -101,52 +153,56 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                       ),
                       const SizedBox(height: 8),
                       Expanded(
-                        child: ListView.separated(
-                          itemCount: _customers.length,
-                          separatorBuilder: (ctx, i) => const Divider(height: 1, color: AppColors.border),
-                          itemBuilder: (context, index) {
-                            final c = _customers[index];
-                            final hasBal = c.balance > 0;
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    flex: 3,
-                                    child: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary)),
-                                  ),
-                                  Expanded(flex: 2, child: Text(c.phone, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-                                  Expanded(flex: 3, child: Text(c.email, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-                                  Expanded(
-                                    flex: 2,
-                                    child: Text(
-                                      'Rs. ${c.balance.toStringAsFixed(0)}',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: hasBal ? AppColors.danger : AppColors.success,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 2,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.successLight,
-                                          borderRadius: BorderRadius.circular(4),
+                        child: _loading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _customers.isEmpty
+                                ? const Center(child: Text('No customers found in database.', style: TextStyle(color: AppColors.textSecondary)))
+                                : ListView.separated(
+                                    itemCount: _customers.length,
+                                    separatorBuilder: (ctx, i) => const Divider(height: 1, color: AppColors.border),
+                                    itemBuilder: (context, index) {
+                                      final c = _customers[index];
+                                      final hasBal = c.balance > 0;
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              flex: 3,
+                                              child: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary)),
+                                            ),
+                                            Expanded(flex: 2, child: Text(c.phone, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                                            Expanded(flex: 3, child: Text(c.email, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                'Rs. ${c.balance.toStringAsFixed(0)}',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color: hasBal ? AppColors.danger : AppColors.success,
+                                                ),
+                                              ),
+                                            ),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: AppColors.successLight,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: Text(c.status, style: const TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold)),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        child: Text(c.status, style: const TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold)),
-                                      ),
-                                    ),
+                                      );
+                                    },
                                   ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
                       ),
                     ],
                   ),
@@ -169,7 +225,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary), overflow: TextOverflow.ellipsis),
               const SizedBox(height: 6),
               Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
             ],
@@ -180,25 +236,49 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
   }
 
   void _openAddCustomerDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Add Customer'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            TextField(decoration: InputDecoration(labelText: 'Customer Full Name')),
-            SizedBox(height: 12),
-            TextField(decoration: InputDecoration(labelText: 'Phone Number (e.g. 0300 1234567)')),
-            SizedBox(height: 12),
-            TextField(decoration: InputDecoration(labelText: 'Email Address')),
+          children: [
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Customer Full Name', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone Number (e.g. 0300 1234567)', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email Address', border: OutlineInputBorder())),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Save Customer'),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              final nav = Navigator.of(ctx);
+              final msg = ScaffoldMessenger.of(context);
+              final res = await http.post(
+                Uri.parse(_baseUrl),
+                headers: await _headers(),
+                body: jsonEncode({
+                  'name': name,
+                  'phone': phoneCtrl.text.trim(),
+                  'email': emailCtrl.text.trim(),
+                }),
+              );
+              if (res.statusCode == 201 || res.statusCode == 200) {
+                nav.pop();
+                await _loadCustomers();
+                msg.showSnackBar(SnackBar(content: Text('Customer "$name" saved!'), backgroundColor: AppColors.success));
+              }
+            },
+            child: const Text('Save Customer', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -211,4 +291,3 @@ const TextStyle _headerStyle = TextStyle(
   fontWeight: FontWeight.bold,
   color: AppColors.textSecondary,
 );
-

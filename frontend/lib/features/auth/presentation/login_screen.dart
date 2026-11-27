@@ -18,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController(text: 'admin123');
   bool _obscurePassword = true;
   bool _rememberMe = true;
+  bool _isLoading = false;
   String? _errorMessage;
 
   void _handleLogin() async {
@@ -29,24 +30,25 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    setState(() => _errorMessage = null);
+    setState(() {
+      _errorMessage = null;
+      _isLoading = true;
+    });
 
     try {
       await AuthService().login(email, password);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
       widget.onLoginSuccess();
     } catch (e) {
-      setState(() => _errorMessage = 'Invalid credentials.');
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
     }
   }
 
-
-  void _quickFill(String email, String password) {
-    setState(() {
-      _emailController.text = email;
-      _passwordController.text = password;
-      _errorMessage = null;
-    });
-  }
 
   void _openOnboarding() {
     Navigator.of(context).push(
@@ -240,10 +242,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 12),
 
                       // Remember Me & Forgot Password Row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
                         children: [
                           Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               SizedBox(
                                 width: 22,
@@ -289,7 +295,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: double.infinity,
                         height: 48,
                         child: ElevatedButton(
-                          onPressed: _handleLogin,
+                          onPressed: _isLoading ? null : _handleLogin,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
@@ -298,14 +304,20 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          child: const Text(
-                            'Login',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Text(
+                                  'Login',
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -324,48 +336,12 @@ class _LoginScreenState extends State<LoginScreen> {
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                'Don’t have an account? New shop accounts are registered exclusively by Super Admin.',
+                                'Don’t have an account? New shop accounts are registered exclusively by NPTS.',
                                 style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.3),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 18),
-
-                      // Quick Switch Role Chips for Instant Demo
-                      const Text(
-                        'Demo Quick Logins:',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textMuted),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        alignment: WrapAlignment.center,
-                        children: [
-                          ActionChip(
-                            avatar: const Icon(Icons.admin_panel_settings, size: 14, color: AppColors.secondary),
-                            label: const Text('Super Admin', style: TextStyle(fontSize: 11)),
-                            backgroundColor: AppColors.secondaryLight,
-                            side: BorderSide.none,
-                            onPressed: () => _quickFill('superadmin@nextplanners.com', 'admin123'),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.store, size: 14, color: AppColors.primary),
-                            label: const Text('Shop Owner', style: TextStyle(fontSize: 11)),
-                            backgroundColor: AppColors.primaryLight,
-                            side: BorderSide.none,
-                            onPressed: () => _quickFill('owner@abc.com', 'password123'),
-                          ),
-                          ActionChip(
-                            avatar: const Icon(Icons.point_of_sale, size: 14, color: AppColors.success),
-                            label: const Text('Cashier', style: TextStyle(fontSize: 11)),
-                            backgroundColor: AppColors.successLight,
-                            side: BorderSide.none,
-                            onPressed: () => _quickFill('cashier@abc.com', 'password123'),
-                          ),
-                        ],
                       ),
                       const SizedBox(height: 12),
 

@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/permission_guard.dart';
 import '../../../core/constants/permissions.dart';
@@ -71,118 +75,91 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _initData();
   }
 
-  void _initData() {
-    _lowStockItems = [
-      LowStockAlertItem(name: 'Cooking Oil 1L', category: 'Dalda - Groceries', quantityLeft: 4, unit: 'bottles', badgeColor: AppColors.danger),
-      LowStockAlertItem(name: 'Milk Powder 500g', category: 'Dairy Fresh', quantityLeft: 6, unit: 'packs', badgeColor: AppColors.warning),
-      LowStockAlertItem(name: 'Biscuits Pack', category: 'Luu Snacks', quantityLeft: 10, unit: 'boxes', badgeColor: AppColors.warning),
-      LowStockAlertItem(name: 'Basmati Rice 5kg', category: 'Mehran Super', quantityLeft: 3, unit: 'bags', badgeColor: AppColors.danger),
-    ];
+  num _todaySales = 0;
+  num _totalRevenue = 0;
+  int _totalOrders = 0;
+  num? _netProfit = 0;
 
-    _recentSales = [
-      RecentSaleItem(
-        invoiceNo: 'INV-1001',
-        customer: 'Walk-in Customer',
-        paymentMethod: 'Cash',
-        total: 'Rs. 24,500',
-        status: 'Completed',
-        time: '12 mins ago',
-        items: [
-          {'name': 'Basmati Rice 5kg', 'qty': 2, 'price': 'Rs. 3,500', 'subtotal': 'Rs. 7,000'},
-          {'name': 'Cooking Oil 1L', 'qty': 3, 'price': 'Rs. 1,250', 'subtotal': 'Rs. 3,750'},
-          {'name': 'Sugar 10kg', 'qty': 1, 'price': 'Rs. 1,600', 'subtotal': 'Rs. 1,600'},
-          {'name': 'Dairy Milk Box', 'qty': 2, 'price': 'Rs. 6,075', 'subtotal': 'Rs. 12,150'},
-        ],
-      ),
-      RecentSaleItem(
-        invoiceNo: 'INV-1002',
-        customer: 'Ali Khan',
-        paymentMethod: 'Card',
-        total: 'Rs. 18,750',
-        status: 'Completed',
-        time: '45 mins ago',
-        items: [
-          {'name': 'Detergent 5kg', 'qty': 2, 'price': 'Rs. 2,400', 'subtotal': 'Rs. 4,800'},
-          {'name': 'Cooking Oil 5L', 'qty': 2, 'price': 'Rs. 6,975', 'subtotal': 'Rs. 13,950'},
-        ],
-      ),
-      RecentSaleItem(
-        invoiceNo: 'INV-1003',
-        customer: 'Fatima Ali',
-        paymentMethod: 'Cash',
-        total: 'Rs. 12,400',
-        status: 'Completed',
-        time: '2 hours ago',
-        items: [
-          {'name': 'Tea 950g Pack', 'qty': 4, 'price': 'Rs. 1,850', 'subtotal': 'Rs. 7,400'},
-          {'name': 'Noodles Carton', 'qty': 1, 'price': 'Rs. 5,000', 'subtotal': 'Rs. 5,000'},
-        ],
-      ),
-      RecentSaleItem(
-        invoiceNo: 'INV-1004',
-        customer: 'Usman Raza',
-        paymentMethod: 'Online / EasyPaisa',
-        total: 'Rs. 8,950',
-        status: 'Completed',
-        time: '3 hours ago',
-        items: [
-          {'name': 'Milk Powder 500g', 'qty': 5, 'price': 'Rs. 1,790', 'subtotal': 'Rs. 8,950'},
-        ],
-      ),
-    ];
+  void _initData() {
+    _lowStockItems = [];
+    _recentSales = [];
+    _loadDashboardFromApi();
   }
 
-  // Dynamic Metrics based on Timeframe and Branch
-  Map<String, String> _getMetrics() {
-    switch (_selectedTimeframe) {
-      case 'Today':
-        return {
-          'todaySales': 'Rs. 24,500',
-          'totalRevenue': 'Rs. 24,500',
-          'totalOrders': '48',
-          'profit': 'Rs. 9,800',
-          'trend': '+14.2% vs yesterday',
-          'margin': '40.0% margin',
-        };
-      case 'This Week':
-        return {
-          'todaySales': 'Rs. 112,400',
-          'totalRevenue': 'Rs. 112,400',
-          'totalOrders': '210',
-          'profit': 'Rs. 44,960',
-          'trend': '+9.8% vs last week',
-          'margin': '39.2% margin',
-        };
-      case 'This Year':
-        return {
-          'todaySales': 'Rs. 2,850,000',
-          'totalRevenue': 'Rs. 2,850,000',
-          'totalOrders': '4,820',
-          'profit': 'Rs. 1,140,000',
-          'trend': '+28.4% YoY Growth',
-          'margin': '40.0% margin',
-        };
-      case 'This Month':
-      default:
-        return {
-          'todaySales': 'Rs. 24,500',
-          'totalRevenue': 'Rs. 220,750',
-          'totalOrders': '350',
-          'profit': 'Rs. 88,420',
-          'trend': '+8.4% this month',
-          'margin': '38.5% margin',
-        };
+  Future<void> _loadDashboardFromApi() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token') ?? '';
+      final res = await http.get(
+        Uri.parse('http://localhost:5002/api/dashboard/metrics'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        },
+      );
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final data = body['data'] as Map<String, dynamic>? ?? {};
+        final rawLowStock = (data['lowStockAlerts'] as List?) ?? [];
+        final rawSales = (data['recentSales'] as List?) ?? [];
+
+        if (!mounted) return;
+        setState(() {
+          _todaySales = (data['todaySales'] as num?) ?? 0;
+          _totalRevenue = (data['totalRevenue'] as num?) ?? 0;
+          _totalOrders = (data['totalOrders'] as num?)?.toInt() ?? 0;
+          _netProfit = data['profit'] as num?;
+          _lowStockItems = rawLowStock.map((p) {
+            final qty = (p['stockQuantity'] as num?)?.toInt() ?? 0;
+            return LowStockAlertItem(
+              name: (p['name'] ?? 'Product').toString(),
+              category: (p['category'] ?? 'General').toString(),
+              quantityLeft: qty,
+              unit: (p['unit'] ?? 'pcs').toString(),
+              badgeColor: qty <= 0 ? AppColors.danger : AppColors.warning,
+            );
+          }).toList();
+          _recentSales = rawSales.map((s) {
+            final total = (s['grandTotal'] as num?) ?? 0;
+            return RecentSaleItem(
+              invoiceNo: (s['invoiceNumber'] ?? s['_id'] ?? '').toString(),
+              customer: (s['customerName'] ?? 'Walk-in Customer').toString(),
+              paymentMethod: (s['paymentMethod'] ?? 'Cash').toString(),
+              total: 'Rs. ${total.toStringAsFixed(0)}',
+              status: (s['status'] ?? 'Completed').toString(),
+              time: (s['createdAt'] ?? '').toString().split('T').first,
+              items: const [],
+            );
+          }).toList();
+        });
+      }
+    } catch (_) {
+      // Keep zero/empty state if offline
     }
+  }
+
+  Map<String, String> _getMetrics() {
+    String fmt(num v) => 'Rs. ${v.toStringAsFixed(0)}';
+    return {
+      'todaySales': fmt(_todaySales),
+      'totalRevenue': fmt(_totalRevenue),
+      'totalOrders': '$_totalOrders',
+      'profit': _netProfit != null ? fmt(_netProfit!) : 'Restricted',
+      'trend': 'Live from MongoDB',
+      'margin': _totalRevenue > 0 && _netProfit != null
+          ? '${((_netProfit! / _totalRevenue) * 100).toStringAsFixed(1)}% margin'
+          : '0.0% margin',
+    };
   }
 
   Future<void> _refreshDashboard() async {
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 700));
+    await _loadDashboardFromApi();
     if (mounted) {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Dashboard metrics updated successfully!'),
+          content: Text('Dashboard metrics updated from database!'),
           duration: Duration(seconds: 2),
           backgroundColor: AppColors.primary,
         ),
@@ -471,7 +448,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Good Morning, Ali Khan!',
+                              'Good Morning, ${AuthService().currentUser?.fullName ?? 'Shop Owner'}!',
                               style: TextStyle(
                                 fontFamily: 'Poppins',
                                 fontSize: isTablet ? 19 : 24,
@@ -703,10 +680,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       child: const Icon(Icons.storefront, color: AppColors.secondary, size: 18),
                     ),
                     const SizedBox(width: 8),
-                    const Flexible(
+                    Flexible(
                       child: Text(
-                        'ABC Supermarket',
-                        style: TextStyle(
+                        AuthService().currentUser?.shopName ?? 'My Shop',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.bold,

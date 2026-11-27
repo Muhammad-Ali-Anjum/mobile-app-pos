@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_colors.dart';
 
 class InvoiceItem {
@@ -17,20 +20,70 @@ class InvoiceItem {
     required this.paid,
     required this.status,
   });
+
+  factory InvoiceItem.fromMap(Map<String, dynamic> map) {
+    final total = (map['grandTotal'] as num?)?.toDouble() ?? 0;
+    final paid = (map['paidAmount'] as num?)?.toDouble() ?? total;
+    return InvoiceItem(
+      invoiceNumber: (map['invoiceNumber'] ?? map['_id'] ?? '').toString(),
+      customer: (map['customerName'] ?? 'Walk-in Customer').toString(),
+      date: (map['createdAt'] ?? '').toString().split('T').first,
+      total: total,
+      paid: paid,
+      status: (map['status'] ?? 'COMPLETED').toString(),
+    );
+  }
 }
 
-class SalesManagementScreen extends StatelessWidget {
+class SalesManagementScreen extends StatefulWidget {
   const SalesManagementScreen({super.key});
 
-  static final List<InvoiceItem> _invoices = [
-    InvoiceItem(invoiceNumber: 'INV-1001', customer: 'Ali Khan', date: '12 Dec 2024', total: 24500, paid: 24500, status: 'Paid'),
-    InvoiceItem(invoiceNumber: 'INV-1002', customer: 'Fatima Ali', date: '12 Dec 2024', total: 18750, paid: 18750, status: 'Paid'),
-    InvoiceItem(invoiceNumber: 'INV-1003', customer: 'Usman Raza', date: '11 Dec 2024', total: 32400, paid: 25000, status: 'Partial'),
-    InvoiceItem(invoiceNumber: 'INV-1004', customer: 'Sana Malik', date: '10 Dec 2024', total: 12800, paid: 12800, status: 'Paid'),
-  ];
+  @override
+  State<SalesManagementScreen> createState() => _SalesManagementScreenState();
+}
+
+class _SalesManagementScreenState extends State<SalesManagementScreen> {
+  List<InvoiceItem> _invoices = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSales();
+  }
+
+  Future<void> _loadSales() async {
+    setState(() => _loading = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token') ?? '';
+      final res = await http.get(
+        Uri.parse('http://localhost:5002/api/pos/sales'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        },
+      );
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final list = (body['data'] as List?) ?? [];
+        if (!mounted) return;
+        setState(() {
+          _invoices = list.map((e) => InvoiceItem.fromMap(e as Map<String, dynamic>)).toList();
+          _loading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _loading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final totalRevenue = _invoices.fold<double>(0, (s, i) => s + i.total);
+    final pendingTotal = _invoices.fold<double>(0, (s, i) => s + (i.total - i.paid).clamp(0, double.infinity));
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Padding(
@@ -38,21 +91,24 @@ class SalesManagementScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 12,
               children: [
-                Column(
+                const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
+                  children: [
                     Text('Sales & Invoices', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                     SizedBox(height: 4),
-                    Text('Invoice records, customer receipts, payment verification, and sales returns', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+                    Text('Invoice records, customer receipts, and payment verification', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
                   ],
                 ),
                 OutlinedButton.icon(
-                  onPressed: () {},
-                  icon: const Icon(Icons.file_download_outlined, size: 18),
-                  label: const Text('Export Invoices'),
+                  onPressed: _loadSales,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Refresh'),
                 ),
               ],
             ),
@@ -60,13 +116,11 @@ class SalesManagementScreen extends StatelessWidget {
 
             Row(
               children: [
-                _buildStatCard('Today\'s Sales', 'Rs. 108,750', AppColors.primary),
+                _buildStatCard('Total Sales', 'Rs. ${totalRevenue.toStringAsFixed(0)}', AppColors.primary),
                 const SizedBox(width: 14),
-                _buildStatCard('Return Sales', 'Rs. 24,500', AppColors.danger),
+                _buildStatCard('Total Invoices', '${_invoices.length}', AppColors.secondary),
                 const SizedBox(width: 14),
-                _buildStatCard('Total Invoices', '48', AppColors.secondary),
-                const SizedBox(width: 14),
-                _buildStatCard('Pending Payments', 'Rs. 8,750', AppColors.warning),
+                _buildStatCard('Pending Payments', 'Rs. ${pendingTotal.toStringAsFixed(0)}', AppColors.warning),
               ],
             ),
             const SizedBox(height: 20),
@@ -95,53 +149,51 @@ class SalesManagementScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Expanded(
-                        child: ListView.separated(
-                          itemCount: _invoices.length,
-                          separatorBuilder: (ctx, i) => const Divider(height: 1, color: AppColors.border),
-                          itemBuilder: (context, index) {
-                            final inv = _invoices[index];
-                            final isPaid = inv.status == 'Paid';
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    flex: 2,
-                                    child: Text(inv.invoiceNumber, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primary)),
-                                  ),
-                                  Expanded(flex: 3, child: Text(inv.customer, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary))),
-                                  Expanded(flex: 2, child: Text(inv.date, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-                                  Expanded(
-                                    flex: 2,
-                                    child: Text('Rs. ${inv.total.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary)),
-                                  ),
-                                  Expanded(flex: 2, child: Text('Rs. ${inv.paid.toStringAsFixed(0)}', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
-                                  Expanded(
-                                    flex: 2,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: isPaid ? AppColors.successLight : AppColors.warningLight,
-                                          borderRadius: BorderRadius.circular(4),
+                        child: _loading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _invoices.isEmpty
+                                ? const Center(child: Text('No sales recorded in database yet.', style: TextStyle(color: AppColors.textSecondary)))
+                                : ListView.separated(
+                                    itemCount: _invoices.length,
+                                    separatorBuilder: (ctx, i) => const Divider(height: 1, color: AppColors.border),
+                                    itemBuilder: (context, index) {
+                                      final inv = _invoices[index];
+                                      final isCompleted = inv.status.toUpperCase() == 'COMPLETED' || inv.status.toUpperCase() == 'PAID';
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                        child: Row(
+                                          children: [
+                                            Expanded(flex: 2, child: Text(inv.invoiceNumber, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primary))),
+                                            Expanded(flex: 3, child: Text(inv.customer, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
+                                            Expanded(flex: 2, child: Text(inv.date, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                                            Expanded(flex: 2, child: Text('Rs. ${inv.total.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                            Expanded(flex: 2, child: Text('Rs. ${inv.paid.toStringAsFixed(0)}', style: const TextStyle(fontSize: 13, color: AppColors.success))),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: isCompleted ? AppColors.successLight : AppColors.warningLight,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: Text(
+                                                    inv.status,
+                                                    style: TextStyle(
+                                                      color: isCompleted ? AppColors.success : AppColors.warning,
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        child: Text(
-                                          inv.status,
-                                          style: TextStyle(
-                                            color: isPaid ? AppColors.success : const Color(0xFFB45309),
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                                      );
+                                    },
                                   ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
                       ),
                     ],
                   ),
@@ -164,7 +216,7 @@ class SalesManagementScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary), overflow: TextOverflow.ellipsis),
               const SizedBox(height: 6),
               Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
             ],
@@ -180,4 +232,3 @@ const TextStyle _headerStyle = TextStyle(
   fontWeight: FontWeight.bold,
   color: AppColors.textSecondary,
 );
-

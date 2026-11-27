@@ -4,13 +4,14 @@ const userController = require('../controllers/user.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 const { requireTenant } = require('../middleware/tenant.middleware');
 const { requirePermission } = require('../middleware/authorization.middleware');
+const { enforceQuota } = require('../middleware/quota.middleware');
 const { PERMISSIONS } = require('../permissions/permission.constants');
 
 router.use(authenticate, requireTenant);
 
 // Users list & creation
 router.get('/', requirePermission(PERMISSIONS.USERS_VIEW), (req, res) => userController.listEmployees(req, res));
-router.post('/', requirePermission(PERMISSIONS.USERS_CREATE), (req, res) => userController.createEmployee(req, res));
+router.post('/', requirePermission(PERMISSIONS.USERS_CREATE), enforceQuota('USER'), (req, res) => userController.createEmployee(req, res));
 
 // Role & Branch assignments
 router.post('/:id/assign-role', requirePermission(PERMISSIONS.USERS_ASSIGN_ROLE), (req, res) => userController.assignRole(req, res));

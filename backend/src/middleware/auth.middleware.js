@@ -50,7 +50,18 @@ const authenticate = async (req, res, next) => {
   }
 };
 
+const requirePlatformAdmin = (req, res, next) => {
+  if (!req.user || !req.user.isPlatformUser) {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Platform Super Admin privileges required.'
+    });
+  }
+  next();
+};
+
 module.exports = {
   authenticate,
+  requirePlatformAdmin,
   JWT_SECRET
 };
